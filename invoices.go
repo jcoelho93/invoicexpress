@@ -94,7 +94,7 @@ func (api *InvoicesService) Create(request CreateInvoiceRequest) (Invoice, error
 }
 
 func (api *InvoicesService) GetItem(itemId int) (InvoiceItem, error) {
-	endpoint := fmt.Sprintf("%s/%s/%d.json", api.IxClient.Host, "items", itemId)
+	endpoint := fmt.Sprintf("%s/%d.json", "items", itemId)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -109,6 +109,15 @@ func (api *InvoicesService) GetItem(itemId int) (InvoiceItem, error) {
 		return InvoiceItem{}, err
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		var apiErr APIError
+		if err := json.NewDecoder(resp.Body).Decode(&apiErr); err != nil {
+			return InvoiceItem{}, fmt.Errorf("HTTP %d", resp.StatusCode)
+		}
+		apiErr.StatusCode = resp.StatusCode
+		return InvoiceItem{}, &apiErr
+	}
 
 	body, _ := io.ReadAll(resp.Body)
 
