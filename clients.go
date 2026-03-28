@@ -1,11 +1,12 @@
 package invoicexpress
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
+	"time"
 )
 
 type ClientsService struct {
@@ -14,30 +15,30 @@ type ClientsService struct {
 }
 
 func (api *ClientsService) Get(clientId int) (Client, error) {
-	endpoint := fmt.Sprintf("%s/%s/%d.json", api.IxClient.Host, "clients", clientId)
+	endpoint := fmt.Sprintf("%s/%d.json", "clients", clientId)
 
-	u, err := url.Parse(endpoint)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	req, err := api.IxClient.NewRequestWithContext(ctx, "GET", endpoint, nil)
 	if err != nil {
 		return Client{}, err
 	}
 
-	params := url.Values{}
-	params.Add("api_key", api.IxClient.ApiKey)
-
-	u.RawQuery = params.Encode()
-
-	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
-	if err != nil {
-		return Client{}, err
-	}
-
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := api.Client.Do(req)
+	resp, err := api.IxClient.Do(req)
 	if err != nil {
 		return Client{}, err
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		var apiErr APIError
+		if err := json.NewDecoder(resp.Body).Decode(&apiErr); err != nil {
+			return Client{}, fmt.Errorf("HTTP %d", resp.StatusCode)
+		}
+		apiErr.StatusCode = resp.StatusCode
+		return Client{}, &apiErr
+	}
 
 	body, _ := io.ReadAll(resp.Body)
 
