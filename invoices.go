@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -52,7 +54,7 @@ func (api *InvoicesService) Get(documentId int) (Invoice, error) {
 }
 
 func (api *InvoicesService) Create(request CreateInvoiceRequest) (Invoice, error) {
-	endpoint := fmt.Sprintf("%s/%s.json", api.IxClient.Host, "invoices")
+	endpoint := "invoices.json"
 
 	reqBody, err := json.Marshal(request)
 	if err != nil {
@@ -143,21 +145,69 @@ type GetItemResponse struct {
 }
 
 type InvoiceItem struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	UnitPrice   string `json:"unit_price"`
-	Unit        string `json:"unit"`
-	Quantity    string `json:"quantity"`
-	Tax         struct {
-		ID    int     `json:"id"`
-		Name  string  `json:"name"`
-		Value float64 `json:"value"`
-	} `json:"tax"`
-	Discount       float64 `json:"discount"`
-	Subtotal       float64 `json:"subtotal"`
-	TaxAmount      float64 `json:"tax_amount"`
-	DiscountAmount float64 `json:"discount_amount"`
-	Total          float64 `json:"total"`
+	Name           string     `json:"name"`
+	Description    string     `json:"description"`
+	UnitPrice      string     `json:"unit_price"`
+	Unit           string     `json:"unit"`
+	Quantity       string     `json:"quantity"`
+	Tax            InvoiceTax `json:"tax"`
+	Discount       float64    `json:"discount"`
+	Subtotal       float64    `json:"subtotal"`
+	TaxAmount      float64    `json:"tax_amount"`
+	DiscountAmount float64    `json:"discount_amount"`
+	Total          float64    `json:"total"`
+}
+
+type InvoiceTax struct {
+	ID    int     `json:"id"`
+	Name  string  `json:"name"`
+	Value float64 `json:"value"`
+}
+
+func (t *InvoiceTax) UnmarshalJSON(data []byte) error {
+	type rawInvoiceTax struct {
+		ID    int             `json:"id"`
+		Name  string          `json:"name"`
+		Value json.RawMessage `json:"value"`
+	}
+
+	var raw rawInvoiceTax
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+
+	t.ID = raw.ID
+	t.Name = raw.Name
+
+	if len(raw.Value) == 0 || string(raw.Value) == "null" {
+		t.Value = 0
+		return nil
+	}
+
+	var valueAsNumber float64
+	if err := json.Unmarshal(raw.Value, &valueAsNumber); err == nil {
+		t.Value = valueAsNumber
+		return nil
+	}
+
+	var valueAsString string
+	if err := json.Unmarshal(raw.Value, &valueAsString); err == nil {
+		valueAsString = strings.TrimSpace(valueAsString)
+		if valueAsString == "" {
+			t.Value = 0
+			return nil
+		}
+
+		parsedValue, err := strconv.ParseFloat(valueAsString, 64)
+		if err != nil {
+			return fmt.Errorf("invalid tax value %q: %w", valueAsString, err)
+		}
+
+		t.Value = parsedValue
+		return nil
+	}
+
+	return fmt.Errorf("invalid tax value type: %s", string(raw.Value))
 }
 
 type MBReference struct {
